@@ -1,0 +1,19 @@
+FROM ruby:3.2-alpine
+
+RUN apk update && apk upgrade && \
+    apk add --no-cache curl build-base && \
+    gem install sinatra puma rackup && \
+    addgroup -S app && adduser -S app -G app
+
+WORKDIR /app
+
+COPY app.rb .
+RUN chown -R app:app /app
+
+COPY check_health.sh .
+RUN chmod +x check_health.sh
+
+USER app
+EXPOSE 4567
+
+ENTRYPOINT ["ruby", "app.rb"]
