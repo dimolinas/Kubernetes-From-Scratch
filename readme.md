@@ -170,7 +170,7 @@ Kubernetes can automatically check if your application is healthy and ready to r
 
 ### Exposing Pods with a Service
 
-A **Service** is a crucial Kubernetes resource that gives us a single, stable network endpoint (a consistent IP address and DNS name) for a group of pods. It sits in front of the pods and acts like a traffic cop, load balancing requests among all the healthy pods behind it.
+A **Service** is a crucial Kubernetes resource that gives us a single, stable network endpoint for a group of pods. It sits in front of the pods and acts like a traffic cop, load balancing requests among all the healthy pods behind it.
 
 ![alt text](./Images/image.png)
 
@@ -187,57 +187,43 @@ kubectl get service hellok8s-svc
 Let's explore the different types of Services:
 
 #### 1. ClusterIP (Default)
-This is the most basic service type and the default if you don't specify one. It's used for **internal cluster communication only**. If `app-a` needs to talk to `app-b` inside the cluster, a ClusterIP service provides a stable, private address for `app-b`.
+This is the most basic service type. It's used for **internal cluster communication only**.
 
 ![alt text](./Images/cluster-ip.png)
 
-```bash
-# Check the internal IP address of the service
-kubectl get service
-# NAME            TYPE        CLUSTER-IP
-# clusterip-svc   ClusterIP   10.105.223.250
-```
-
 #### 2. NodePort
-This service type is perfect for exposing your application to the **outside world** for development or testing. It builds on top of `ClusterIP` by opening a specific port on *all* worker nodes. Any traffic sent to that port on any node gets forwarded to your application's pods.
+This service type is perfect for exposing your application to the **outside world** for development or testing. It opens a specific port on *all* worker nodes.
 
 ![alt text](./Images/nodePort.png)
 
-```bash
-# You can now access your app from outside the cluster
-curl http://<any-node-ip>:<node-port>
-# Example: curl http://localhost:30001
-# [v3] Hello, Kubernetes, from hellok8s-7f4c57d446-t9ngx!
-```
-
 #### 3. LoadBalancer
-This is the most powerful and production-ready service type. It builds on `NodePort` and automatically provisions a **cloud load balancer** (like an AWS Elastic Load Balancer or Google Cloud Load Balancer) for you. This gives you a single, highly available IP address to access your application from the internet.
-
-The cloud provider's load balancer handles distributing traffic to the `NodePort` on your worker nodes, which then routes it to your pods.
+This is the most powerful and production-ready service type. It automatically provisions a **cloud load balancer**.
 
 ![alt text](./Images/loadbalancer.png)
 
-**Note:** The `LoadBalancer` type is the easiest way to expose an application, but it provisions a new load balancer for *every service*, which can get expensive. For managing multiple services through one load balancer, you'll want to look into the **Ingress** resource later on.
-
 #### 4. ExternalName
-This service type is a bit different. Instead of pointing to pods inside your cluster, it acts as an alias for an **external service** by returning a `CNAME` record.
-
-For example, let's say your application needs to connect to a database hosted outside Kubernetes at `my-db.company.com`. Instead of hardcoding this address in your app, you can create an `ExternalName` service.
-
-```yaml
-# external-name-service.yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: db-service
-spec:
-  type: ExternalName
-  externalName: my-db.company.com
-```
-
-Now, your pods can simply connect to `db-service`, and Kubernetes DNS will automatically resolve it to `my-db.company.com`. If the database address ever changes, you only need to update the service, not all of your applications!
+This service type is different. It acts as an alias for an **external service** by returning a `CNAME` record, making it easy to manage external dependencies.
 
 ![alt text](./Images/externalName.png)
+
+### Service Discovery: How Pods Find Each Other
+
+So we have a Service, but how does `app-a` actually find and talk to `app-b`? Kubernetes provides two main ways for this to happen.
+
+#### DNS (The Recommended Way) 🌐
+Kubernetes comes with a built-in DNS service that works out of the box. When you create a Service, it automatically gets a DNS entry. For example, if you create a service named `hellok8s-svc`, any other pod in the cluster can reliably reach it just by using its name: `http://hellok8s-svc:4567`.
+
+#### Environment Variables (The Old Way) 📜
+Another way services can be found is through environment variables. When Kubernetes starts a container, it automatically injects environment variables for every service that is *already running*.
+
+You could see variables like `HELLOK8S_SVC_SERVICE_HOST` and `HELLOK8S_SVC_SERVICE_PORT`.
+
+**Why isn't this recommended?**
+There's a big catch: these variables are only created when the pod starts.
+* If you create a new service *after* a pod is already running, that pod won't have the environment variables for the new service.
+* If a service's IP address changes, the environment variables in existing pods **will not be updated**.
+
+Because of these limitations, **DNS is the preferred and more reliable solution** for service discovery.
 
 ---
 
@@ -258,9 +244,15 @@ watch -n 2 kubectl get pods
 
 ## 📝 Recap
 
-Let's review what we've learned:
+Let's review the key concepts we've covered:
 
-* **Deployments**: High-level resources that manage pods for us, making scaling easy.
-* **Rollout Strategies**: We can use `RollingUpdate` (default, zero downtime) or `Recreate` (downtime, but simpler).
-* **Health Probes**: `readinessProbe` ensures a pod is ready for traffic, while `livenessProbe` ensures a running container is still healthy.
-* **Services**: Give us a stable endpoint to access our pods. `ClusterIP` is for internal traffic, `NodePort` is for simple external access, `LoadBalancer` is for production-grade external access, and `ExternalName` creates a local alias for an external service.
+* **Pods are Ephemeral**: Pods can be created and destroyed at any time, so we should never rely on their IP addresses.
+* **Services Provide Stability**: Services give us a stable, reliable endpoint (IP address and DNS name) to access our pods. The connection between a Service and its Pods is made using **labels** and **selectors**.
+* **Service Types**:
+    * **ClusterIP**: For internal communication inside the cluster only.
+    * **NodePort**: Exposes the service on a port on each worker node, allowing external access for testing.
+    * **LoadBalancer**: Creates a cloud load balancer for production-grade external access.
+    * **ExternalName**: Creates a DNS alias to a service outside the cluster.
+* **Service Discovery**:
+    * **DNS (Recommended)**: The best way for pods to find services. Kubernetes automatically creates a DNS record like `my-service` that pods can use.
+    * **Environment Variables**: An older method that is less reliable because variables are not updated after a pod star
